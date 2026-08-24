@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>市场监控 · Market Monitor</title>
+<script src="./vendor/lightweight-charts.js"></script>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --border:#262d38; --text:#e6edf3;
+    --dim:#8b949e; --up:#26a69a; --down:#ef5350; --accent:#58a6ff;
+    --warn:#d29922;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:14px/1.5 "Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  header{display:flex;align-items:center;gap:20px;flex-wrap:wrap;
+         padding:12px 18px;background:var(--panel);border-bottom:1px solid var(--border)}
+  .price{font-size:26px;font-weight:600;font-variant-numeric:tabular-nums}
+  .chg{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+  .up{color:var(--up)} .down{color:var(--down)}
+  select,button{background:#1f2630;color:var(--text);border:1px solid var(--border);
+                border-radius:6px;padding:6px 10px;font:inherit;cursor:pointer}
+  button.tf{padding:5px 11px}
+  button.tf.on{background:var(--accent);border-color:var(--accent);color:#08111f;font-weight:600}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--dim)}
+  .dot.connected{background:var(--up)} .dot.reconnecting{background:var(--warn)}
+  .dot.error{background:var(--down)}
+  main{display:grid;grid-template-columns:1fr 360px;height:calc(100vh - 57px)}
+  @media(max-width:900px){main{grid-template-columns:1fr;height:auto}}
+  .charts{display:flex;flex-direction:column;min-width:0}
+  #main-chart{flex:1;min-height:340px}
+  #rsi-chart{height:130px;border-top:1px solid var(--border)}
+  aside{border-left:1px solid var(--border);background:var(--panel);
+        overflow-y:auto;padding:14px}
+  .card{margin-bottom:16px}
+  .card h3{margin:0 0 8px;font-size:12px;letter-spacing:.08em;color:var(--dim);
+           text-transform:uppercase;font-weight:600}
+  .row{display:flex;justify-content:space-between;align-items:center;
+       padding:5px 0;border-bottom:1px solid #1d232c}
+  .row:last-child{border-bottom:0}
+  .row .k{color:var(--dim)}
+  .row .v{font-variant-numeric:tabular-nums;font-weight:500}
+  .bar{height:6px;background:#232a34;border-radius:3px;overflow:hidden;margin-top:6px}
+  .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--up),var(--warn),var(--down))}
+  .lv{display:flex;justify-content:space-between;padding:4px 0;font-variant-numeric:tabular-nums}
+  .lv .t{color:var(--dim);font-size:12px}
+  .note{color:var(--dim);font-size:12px;line-height:1.6;
+        border-left:2px solid var(--border);padding-left:10px;margin-top:10px}
+  .err{background:#3d1618;border:1px solid var(--down);color:#ffc9c9;
+       padding:10px 12px;border-radius:6px;margin-bottom:14px;font-size:13px;display:none}
+  /* —— 建议 / 评分 —— */
+  .verdict{font-size:19px;font-weight:700;text-align:center;padding:9px;
+           border-radius:6px;background:#1c222c;margin-bottom:10px}
+  .verdict.buy{background:rgba(38,166,154,.16);color:var(--up);border:1px solid var(--up)}
+  .verdict.sell{background:rgba(239,83,80,.16);color:var(--down);border:1px solid var(--down)}
+  .verdict.hold{color:var(--dim)}
+  .verdict.up{background:rgba(38,166,154,.16);color:var(--up);border:1px solid var(--up)}
+  .verdict.down{background:rgba(239,83,80,.16);color:var(--down);border:1px solid var(--down)}
+  .verdict.warn{background:rgba(210,153,34,.16);color:var(--warn);border:1px solid var(--warn)}
+  .scorebar{position:relative;height:8px;border-radius:4px;margin:4px 0 3px;
+            background:linear-gradient(90deg,var(--down) 0%,#3a4250 50%,var(--up) 100%)}
+  .scorebar b{position:absolute;top:-3px;width:3px;height:14px;background:#fff;
+              border-radius:2px;transform:translateX(-50%);left:50%;transition:left .3s}
+  .scoreline{display:flex;justify-content:space-between;font-size:11px;color:var(--dim);margin-bottom:9px}
+  .scoreline span:nth-child(2){color:var(--text);font-weight:700;font-size:13px}
+  .part{display:flex;justify-content:space-between;font-size:12px;padding:3px 0}
+  .part .pn{color:var(--dim)} .part .ps{font-weight:600;font-variant-numeric:tabular-nums}
+  .warn-item{background:rgba(210,153,34,.1);border-left:2px solid var(--warn);
+             color:#e8c374;font-size:12px;line-height:1.5;padding:6px 9px;
+             border-radius:0 4px 4px 0;margin-top:7px}
+  .final{font-size:20px;font-weight:700;text-align:center;padding:13px 10px;
+         border-radius:7px;background:#1c222c;line-height:1.35}
+  .final.buy{background:rgba(38,166,154,.18);color:var(--up);border:1px solid var(--up)}
+  .final.sell{background:rgba(239,83,80,.18);color:var(--down);border:1px solid var(--down)}
+  .final.warn{background:rgba(210,153,34,.18);color:var(--warn);border:1px solid var(--warn)}
+  .final.hold{color:var(--dim)}
+  .final-why{font-size:12.5px;color:var(--dim);line-height:1.65;margin-top:9px;
+             padding:9px 11px;background:#12171e;border-radius:6px}
+  .plan{background:#12171e;border:1px solid var(--border);border-radius:7px;
+         padding:11px 13px;margin-bottom:10px}
+  .plan-row{display:flex;justify-content:space-between;align-items:baseline;padding:3px 0}
+  .plan-row .pl-k{color:var(--dim);font-size:12.5px}
+  .plan-row .pl-v{font-variant-numeric:tabular-nums;font-weight:600;font-size:15px}
+  .plan-row.big .pl-v{font-size:21px;font-weight:700}
+  .plan-row.big.up .pl-v{color:var(--up)} .plan-row.big.down .pl-v{color:var(--down)}
+  .plan-row.sub{padding-top:0;margin-top:-3px}
+  .plan-row.sub .pl-k,.plan-row.sub .pl-v{font-size:11.5px;color:var(--dim);font-weight:500}
+  .ent{display:flex;justify-content:space-between;align-items:center;gap:8px;
+        padding:8px 10px;background:#12171e;border:1px solid var(--border);
+        border-radius:6px;margin-bottom:6px}
+  .ent.now{border-color:#3d4a5c}
+  .ent-l{min-width:0}
+  .ent-n{font-size:12.5px;font-weight:600;color:var(--text)}
+  .ent-b{font-size:11px;color:var(--dim);margin-top:1px}
+  .ent-r{text-align:right;flex-shrink:0}
+  .ent-p{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent)}
+  .ent-d{font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums;margin-top:1px}
+  .al-btns{display:flex;gap:7px;margin:9px 0 8px}
+  .al-btns button{flex:1;font-size:12.5px;padding:6px 4px}
+  .al-primary{background:var(--accent)!important;border-color:var(--accent)!important;
+              color:#08111f!important;font-weight:700}
+  .al-quick{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:9px}
+  .al-quick button{font-size:11px;padding:4px 8px;border-radius:12px}
+  .al-item{display:flex;justify-content:space-between;align-items:center;gap:8px;
+           padding:7px 9px;background:#12171e;border:1px solid var(--border);
+           border-radius:6px;margin-bottom:5px}
+  .al-item.fired{border-color:var(--warn);background:rgba(210,153,34,.1)}
+  .al-p{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums}
+  .al-i{margin-right:6px;font-size:12px}
+  .al-item.fired .al-i{color:var(--warn)}
+  .al-m{font-size:11px;color:var(--dim);margin-top:1px}
+  .al-x{background:none!important;border:none!important;color:var(--dim)!important;
+        cursor:pointer;font-size:16px;padding:0 4px;line-height:1}
+  .al-x:hover{color:var(--down)!important}
+  .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);
+         z-index:99;align-items:center;justify-content:center;padding:20px}
+  .modal.on{display:flex}
+  .modal-box{background:var(--panel);border:1px solid var(--warn);border-radius:11px;
+             padding:22px 24px;max-width:400px;width:100%;
+             box-shadow:0 12px 48px rgba(0,0,0,.6)}
+  .modal-title{font-size:19px;font-weight:700;color:var(--warn);margin-bottom:11px}
+  .modal-body{font-size:14px;line-height:1.75;margin-bottom:17px;
+              font-variant-numeric:tabular-nums}
+  .modal-box button{width:100%;padding:9px}
+  .al-badge{margin-left:auto;font-size:13px;font-weight:600;
+            font-variant-numeric:tabular-nums;white-space:nowrap}
+  .al-badge + div{margin-left:14px!important}
+  /* —— 输入 —— */
+  .ipt{display:flex;justify-content:space-between;align-items:center;padding:4px 0}
+  .ipt label{color:var(--dim);font-size:13px;font-weight:700}
+  .ipt input,.ipt select{width:118px;text-align:right;background:#1f2630;color:var(--text);
+        border:1px solid var(--border);border-radius:5px;padding:4px 8px;font:inherit;
+        font-variant-numeric:tabular-nums}
+  .ipt select{text-align:left}
+</style>
+</head>
+<body>
+
+<header>
+  <select id="symbol">
+    <option value="BTCUSDT">BTC/USDT</option>
+    <option value="ETHUSDT">ETH/USDT</option>
+    <option value="SOLUSDT">SOL/USDT</option>
+    <option value="BNBUSDT">BNB/USDT</option>
+  </select>
+  <div>
+    <span class="price" id="last">—</span>
+    <span class="chg" id="chg"></span>
+  </div>
+  <div id="tfs">
+    <button class="tf" data-i="5m">5m</button>
+    <button class="tf" data-i="15m">15m</button>
+    <button class="tf on" data-i="1h">1h</button>
+    <button class="tf" data-i="4h">4h</button>
+    <button class="tf" data-i="1d">1d</button>
+  </div>
+  <div id="al-badge" class="al-badge"></div>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:7px;color:var(--dim);font-size:12px">
+    <span class="dot" id="dot"></span><span id="status">连接中…</span>
+  </div>
+</header>
+
+<main>
+  <div class="charts">
+    <div id="main-chart"></div>
+    <div id="rsi-chart"></div>
+  </div>
+
+  <aside>
+    <div class="err" id="err"></div>
+
+
+    <div class="card">
+      <h3>操作建议</h3>
+      <div class="verdict" id="act">—</div>
+      <div class="scorebar"><i id="scorefill"></i><b id="scoremark"></b></div>
+      <div class="scoreline">
+        <span>卖出 -10</span><span id="scoreval">0</span><span>+10 买入</span>
+      </div>
+      <div id="parts"></div>
+      <div id="warns"></div>
+    </div>
+
+    <div class="card">
+      <h3>交易设置</h3>
+      <div class="ipt"><label>本金 (元)</label><input id="i-cap" type="number" value="10000" min="100" step="1000"></div>
+      <div class="ipt"><label>目标利润 (元)</label><input id="i-tgt" type="number" value="100" min="1" step="10"></div>
+      <div class="ipt"><label>持有时长</label>
+        <select id="i-hold">
+          <option value="4">4 小时</option>
+          <option value="12">12 小时</option>
+          <option value="24" selected>1 天</option>
+          <option value="72">3 天</option>
+          <option value="168">1 周</option>
+        </select>
+      </div>
+      <div class="ipt"><label>仓位比例 (%)</label><input id="i-pos" type="number" value="20" min="1" max="100" step="5"></div>
+      <div class="ipt"><label>手续费 (单边%)</label><input id="i-fee" type="number" value="0.1" min="0" step="0.01"></div>
+      <div class="ipt"><label>USDT 汇率</label><input id="i-fx" type="number" value="7.2" min="1" step="0.1"></div>
+    </div>
+
+
+    <div class="card">
+      <h3>价格提醒</h3>
+      <div class="ipt"><label>提醒价格</label><input id="al-px" type="number" step="0.01" placeholder="填价格"></div>
+      <div class="ipt"><label>接近阈值 (%)</label><input id="al-tol" type="number" value="0.1" min="0" max="5" step="0.05"></div>
+      <div class="al-btns">
+        <button id="al-add" class="al-primary">添加提醒</button>
+        <button id="al-perm">开启桌面通知</button>
+      </div>
+      <div class="al-quick" id="al-quick"></div>
+      <div id="al-list"></div>
+      <div class="note" id="al-note"></div>
+    </div>
+
+    <div class="card">
+      <h3>建议买入价</h3>
+      <div id="ent-list"></div>
+      <div class="note">
+        这些是<b>客观结构位</b>，不是「会涨」的判断。
+        「等到概率」= 历史上同样时长内价格回落到该幅度的比例；
+        挂得越低成交越难，但买到的价越好。价位低于现价时用限价单挂单等待。
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>交易计划</h3>
+      <div class="plan">
+        <div class="plan-row"><span class="pl-k">买入 (现价)</span><span class="pl-v" id="pl-buy">—</span></div>
+        <div class="plan-row big up"><span class="pl-k">卖出目标</span><span class="pl-v" id="pl-sell">—</span></div>
+        <div class="plan-row sub"><span class="pl-k">需要涨</span><span class="pl-v" id="pl-need">—</span></div>
+        <div class="plan-row big down"><span class="pl-k">止损价</span><span class="pl-v" id="pl-stop">—</span></div>
+        <div class="plan-row sub"><span class="pl-k">最多跌</span><span class="pl-v" id="pl-stoppct">—</span></div>
+      </div>
+      <div class="row"><span class="k">买入数量</span><span class="v" id="pl-qty">—</span></div>
+      <div class="row"><span class="k">投入金额</span><span class="v" id="pl-cost">—</span></div>
+      <div class="row"><span class="k">来回手续费</span><span class="v" id="pl-fee">—</span></div>
+      <div class="row"><span class="k">达标净赚</span><span class="v up" id="pl-win">—</span></div>
+      <div class="row"><span class="k">止损亏损</span><span class="v down" id="pl-loss">—</span></div>
+      <div class="row"><span class="k">单笔风险</span><span class="v" id="pl-risk">—</span></div>
+      <div class="note" id="pl-ref"></div>
+    </div>
+
+    <div class="card">
+      <h3>最终结论</h3>
+      <div class="final" id="fin-title">—</div>
+      <div class="final-why" id="fin-why"></div>
+    </div>
+
+    <div class="card">
+      <h3>目标可行性</h3>
+      <div class="verdict" id="fv">—</div>
+      <div id="f-why"></div>
+      <div class="row"><span class="k">需要涨幅</span><span class="v" id="f-need">—</span></div>
+      <div class="row"><span class="k">典型波动</span><span class="v" id="f-typ">—</span></div>
+      <div class="row"><span class="k">目标价</span><span class="v up" id="f-tp">—</span></div>
+      <div class="row"><span class="k">止损价</span><span class="v down" id="f-sp">—</span></div>
+      <div class="row"><span class="k">仓位金额</span><span class="v" id="f-pos">—</span></div>
+      <div class="row"><span class="k">手续费</span><span class="v" id="f-fee">—</span></div>
+      <div class="row"><span class="k">止损亏损</span><span class="v" id="f-sl">—</span></div>
+      <div class="row"><span class="k">盈亏比</span><span class="v" id="f-rr">—</span></div>
+      <div class="row"><span class="k">历史胜率</span><span class="v" id="f-wr">—</span></div>
+      <div class="row"><span class="k">期望值/次</span><span class="v" id="f-ev">—</span></div>
+      <div class="row"><span class="k">买入不动基准</span><span class="v" id="f-hold">—</span></div>
+      <div class="row"><span class="k">超额收益</span><span class="v" id="f-ex">—</span></div>
+    </div>
+
+    <div class="card">
+      <h3>策略回测</h3>
+      <div class="ipt"><label>入场评分 ≥</label><input id="b-in" type="number" value="4" min="-10" max="10" step="1"></div>
+      <div class="ipt"><label>出场评分 ≤</label><input id="b-out" type="number" value="0" min="-10" max="10" step="1"></div>
+      <div class="ipt"><label>止损 (ATR倍)</label><input id="b-stop" type="number" value="2" min="0.5" max="10" step="0.5"></div>
+      <div class="ipt"><label>跌破MA20出场</label><select id="b-ma"><option value="1">是</option><option value="0" selected>否</option></select></div>
+      <div class="row" style="margin-top:8px"><span class="k">策略收益</span><span class="v" id="b-ret">—</span></div>
+      <div class="row"><span class="k">买入持有</span><span class="v" id="b-bh">—</span></div>
+      <div class="row"><span class="k">超额</span><span class="v" id="b-ex">—</span></div>
+      <div class="row"><span class="k">交易次数</span><span class="v" id="b-tc">—</span></div>
+      <div class="row"><span class="k">胜率</span><span class="v" id="b-wr">—</span></div>
+      <div class="row"><span class="k">盈利因子</span><span class="v" id="b-pf">—</span></div>
+      <div class="row"><span class="k">最大回撤</span><span class="v" id="b-dd">—</span></div>
+      <div class="row"><span class="k">持有回撤</span><span class="v" id="b-bhdd">—</span></div>
+      <div id="b-warn"></div>
+    </div>
+
+    <div class="card">
+      <h3>24 小时</h3>
+      <div class="row"><span class="k">最高</span><span class="v" id="h24">—</span></div>
+      <div class="row"><span class="k">最低</span><span class="v" id="l24">—</span></div>
+      <div class="row"><span class="k">成交额</span><span class="v" id="v24">—</span></div>
+    </div>
+
+    <div class="card">
+      <h3>价格分位</h3>
+      <div class="row"><span class="k">近 20 根</span><span class="v" id="p20">—</span></div>
+      <div class="bar"><i id="b20" style="width:0"></i></div>
+      <div class="row" style="margin-top:8px"><span class="k">近 60 根</span><span class="v" id="p60">—</span></div>
+      <div class="bar"><i id="b60" style="width:0"></i></div>
+      <div class="row" style="margin-top:8px"><span class="k">近 120 根</span><span class="v" id="p120">—</span></div>
+      <div class="bar"><i id="b120" style="width:0"></i></div>
+      <div class="note">分位 &lt;25% 为区间低位，&gt;75% 为区间高位。低位不等于该买——还要看趋势方向。</div>
+    </div>
+
+    <div class="card">
+      <h3>指标状态</h3>
+      <div class="row"><span class="k">RSI(14)</span><span class="v" id="rsiv">—</span></div>
+      <div class="row"><span class="k">MACD</span><span class="v" id="macdv">—</span></div>
+      <div class="row"><span class="k">均线排列</span><span class="v" id="mav">—</span></div>
+      <div class="row"><span class="k">布林位置</span><span class="v" id="bbv">—</span></div>
+      <div class="row"><span class="k">ATR(14)</span><span class="v" id="atrv">—</span></div>
+    </div>
+
+    <div class="card">
+      <h3>压力位 · 上方</h3>
+      <div id="res"></div>
+    </div>
+
+    <div class="card">
+      <h3>支撑位 · 下方</h3>
+      <div id="sup"></div>
+      <div class="note">由摆动高低点聚类得出，括号内为触碰次数。触碰越多，该价位越有效。</div>
+    </div>
+
+    <div class="card">
+      <h3>说明</h3>
+      <div class="note">
+        「历史胜率」和「期望值」来自屏障模拟：拿最近 500 根 K 线，
+        对每个入场点逐根检查是先碰到目标价还是先碰到止损价。
+        同一根内两者都碰到时一律判为止损，所以结果偏保守。<br><br>
+        这是<b>历史统计，不是预测</b>。它能告诉你目标定得离不离谱，
+        不能告诉你下一笔会不会赚。期望值为负时不要下单——那是数学问题，不是运气问题。
+      </div>
+    </div>
+
+  </aside>
+</main>
+
+<div class="modal" id="modal">
+  <div class="modal-box">
+    <div class="modal-title" id="modal-title">价格提醒</div>
+    <div class="modal-body" id="modal-body"></div>
+    <button class="al-primary" id="modal-ok">知道了</button>
+  </div>
+</div>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>
